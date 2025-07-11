@@ -1,27 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Pure Energy-Line Toroid</title>
-<style>html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}canvas{display:block}.dg.main{z-index:10}</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Energy‑Line Toroid (Phase Mode)</title>
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
+    canvas{display:block}
+    .dg.main{z-index:10}
+  </style>
 </head>
 <body>
 <script>
-const load=s=>new Promise((r,e)=>{const t=document.createElement('script');t.src=s;t.async=true;t.crossOrigin='anonymous';t.onload=r;t.onerror=e;document.head.appendChild(t)});
-async function seq(arr){for(const u of arr)try{return await load(u)}catch{}}
+const load=s=>new Promise((ok,err)=>{const t=document.createElement('script');t.src=s;t.async=true;t.crossOrigin='anonymous';t.onload=ok;t.onerror=err;document.head.appendChild(t)});
+async function seq(arr){for(const u of arr)try{await load(u);return}catch{}}
 (async()=>{
-  const v='0.146.0';
-  await seq([`https://cdn.jsdelivr.net/npm/three@${v}/build/three.min.js`]);
-  await seq([`https://cdn.jsdelivr.net/npm/three@${v}/examples/js/controls/OrbitControls.js`]);
-  await seq([`https://cdn.jsdelivr.net/npm/three@${v}/examples/js/geometries/ParametricGeometry.js`]);
-  await seq([`https://cdn.jsdelivr.net/npm/three@${v}/examples/js/loaders/GLTFLoader.js`]);
+  const ver='0.146.0';
+  await seq([`https://cdn.jsdelivr.net/npm/three@${ver}/build/three.min.js`]);
+  await seq([`https://cdn.jsdelivr.net/npm/three@${ver}/examples/js/controls/OrbitControls.js`]);
+  await seq([`https://cdn.jsdelivr.net/npm/three@${ver}/examples/js/geometries/ParametricGeometry.js`]);
+  await seq([`https://cdn.jsdelivr.net/npm/three@${ver}/examples/js/loaders/GLTFLoader.js`]);
   await seq(['https://cdn.jsdelivr.net/npm/dat.gui@0.7.9/build/dat.gui.min.js']);
 
-  const CFG={R:3,r:1,h:2,tw:0,ripAmp:.25,ripFreq:6,lineCount:120,seg:400,dashSpeed:.02,spinSpeed:.002,showHuman:true};
+  /* CONFIG */
+  const CFG={
+    R:1,
+    r:1,
+    h:1.5,
+    tw:0,
+    allowPhaseShift:false,
+    ripAmp:.25,
+    ripFreq:6,
+    lineCount:120,
+    seg:400,
+    dashSpeed:.001,
+    spinSpeed:.002,
+    showHuman:true
+  };
+
+  /* THREE BASICS */
   const scene=new THREE.Scene();
   const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,.1,1000);
-  camera.position.set(0,0,14);
+  camera.position.set(0,0,12);
   const renderer=new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(innerWidth,innerHeight);
   renderer.setPixelRatio(devicePixelRatio);
@@ -29,37 +49,65 @@ async function seq(arr){for(const u of arr)try{return await load(u)}catch{}}
   new THREE.OrbitControls(camera,renderer.domElement);
   scene.add(new THREE.AmbientLight(0xffffff,.8));
 
+  /* HUMAN MODEL */
   const gltfLoader=new THREE.GLTFLoader();
-  let human;gltfLoader.load('https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb',g=>{human=g.scene;human.scale.set(.8,.8,.8);human.position.sub(new THREE.Box3().setFromObject(human).getCenter(new THREE.Vector3()));scene.add(human);human.visible=CFG.showHuman;});
+  let human=null;
+  gltfLoader.load('https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb',g=>{
+      human=g.scene;
+      human.scale.set(.8,.8,.8);
+      human.position.sub(new THREE.Box3().setFromObject(human).getCenter(new THREE.Vector3()));
+      scene.add(human);
+      human.visible=CFG.showHuman;
+  });
 
+  /* ENERGY LINES */
   const linesGroup=new THREE.Group();scene.add(linesGroup);
   const dashMat=new THREE.LineDashedMaterial({color:0x00ffff,dashSize:.35,gapSize:.15});
-  const bufTemplate=new Float32Array((CFG.seg+1)*3);
+  const baseBuf=new Float32Array((CFG.seg+1)*3);
   function buildLines(){
-    linesGroup.children.forEach(l=>{l.geometry.dispose();});linesGroup.clear();
+    linesGroup.children.forEach(l=>l.geometry.dispose());
+    linesGroup.clear();
     for(let i=0;i<CFG.lineCount;i++){
-      const theta0=i/CFG.lineCount*6.28318530718;
-      const pos=bufTemplate.slice();
+      const theta0=i/CFG.lineCount*2*Math.PI;
+      const pos=baseBuf.slice();
       let k=0;
       for(let j=0;j<=CFG.seg;j++){
-        const t=j/CFG.seg,phi=t*6.28318530718;
-        const m=CFG.r*(1+CFG.ripAmp*Math.sin(CFG.ripFreq*theta0));
-        const th=theta0+CFG.tw*phi;
-        pos[k++]=(CFG.R+m*Math.cos(phi))*Math.cos(th);
-        pos[k++]=m*Math.sin(phi)*CFG.h;
-        pos[k++]=(CFG.R+m*Math.cos(phi))*Math.sin(th);
+        const t=j/CFG.seg,phi=t*2*Math.PI;
+        const minor=CFG.r*(1+CFG.ripAmp*Math.sin(CFG.ripFreq*theta0));
+        const theta=theta0+CFG.tw*phi;
+        pos[k++]=(CFG.R+minor*Math.cos(phi))*Math.cos(theta);
+        pos[k++]=minor*Math.sin(phi)*CFG.h;
+        pos[k++]=(CFG.R+minor*Math.cos(phi))*Math.sin(theta);
       }
-      const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-      geo.computeBoundingSphere();const line=new THREE.Line(geo,dashMat);line.computeLineDistances();line.userData.base=line.geometry.attributes.lineDistance.array.slice();linesGroup.add(line);
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+      const line=new THREE.Line(geo,dashMat);
+      line.computeLineDistances();
+      line.userData.base=line.geometry.attributes.lineDistance.array.slice();
+      linesGroup.add(line);
     }
   }
   buildLines();
 
-  const gui=new dat.GUI();const rebuild=()=>buildLines();
-  gui.add(CFG,'R',1,6,.1).name('Hole Radius').onChange(rebuild);
+  /* GUI */
+  const gui=new dat.GUI();
+  const rebuild=()=>buildLines();
+
+  // twist slider with dynamic step
+  let twistCtrl=gui.add(CFG,'tw',0,3,1).name('Twist').onChange(v=>{if(!CFG.allowPhaseShift){CFG.tw=Math.round(v);}rebuild();});
+
+  gui.add(CFG,'allowPhaseShift').name('Allow Phase Shift').onChange(v=>{
+    // adjust step without recreating controller
+    const dom=twistCtrl.domElement.querySelector('input');
+    twistCtrl.__step=v?0.01:1;
+    dom.step=twistCtrl.__step;
+    if(!v){CFG.tw=Math.round(CFG.tw);twistCtrl.setValue(CFG.tw);} // snap visually and in data
+    rebuild();
+  });
+
+  gui.add(CFG,'R',0.5,6,.1).name('Hole Radius').onChange(rebuild);
   gui.add(CFG,'r',.2,2,.05).name('Tube Radius').onChange(rebuild);
   gui.add(CFG,'h',.5,4,.05).name('Height').onChange(rebuild);
-  gui.add(CFG,'tw',0,3,.01).name('Twist').onChange(rebuild);
   gui.add(CFG,'ripAmp',0,.8,.01).name('Ripple Amp').onChange(rebuild);
   gui.add(CFG,'ripFreq',2,12,1).name('Ripple Freq').onChange(rebuild);
   gui.add(CFG,'lineCount',20,300,1).name('Line Count').onChange(rebuild);
@@ -67,17 +115,24 @@ async function seq(arr){for(const u of arr)try{return await load(u)}catch{}}
   gui.add(CFG,'spinSpeed',0,.01,.0005).name('Orbit Speed');
   gui.add(CFG,'showHuman').name('Show Human').onChange(()=>{if(human)human.visible=CFG.showHuman;});
 
+  /* ANIMATION */
   let phase=0;
   function animate(){
     requestAnimationFrame(animate);
     phase+=CFG.dashSpeed;
-    linesGroup.children.forEach(l=>{const a=l.geometry.attributes.lineDistance;const b=l.userData.base;for(let i=0;i<a.count;i++)a.array[i]=b[i]+phase*10;a.needsUpdate=true;});
+    linesGroup.children.forEach(l=>{
+      const attr=l.geometry.attributes.lineDistance;
+      const base=l.userData.base;
+      for(let i=0;i<attr.count;i++)attr.array[i]=base[i]+phase*10;
+      attr.needsUpdate=true;
+    });
     linesGroup.rotation.y+=CFG.spinSpeed;
     renderer.render(scene,camera);
   }
   animate();
 
-  let rID;window.addEventListener('resize',()=>{clearTimeout(rID);rID=setTimeout(()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);},150);});
+  /* RESIZE */
+  let rid;window.addEventListener('resize',()=>{clearTimeout(rid);rid=setTimeout(()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);},150);});
 })();
 </script>
 </body>
